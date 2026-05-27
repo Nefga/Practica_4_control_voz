@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Control Voz ESP32</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    :root {
+      --white: #ffffff;
+      --off:   #f5f4f0;
+      --off2:  #eeece6;
+      --off3:  #e5e2d9;
+      --ink:   #0f0e0c;
+      --ink2:  #4a4740;
+      --ink3:  #8c8880;
+      --line:  rgba(15,14,12,0.08);
+      --line2: rgba(15,14,12,0.14);
+      --cyan:  #00b8d9;
+      --cyan2: #007f98;
+      --violet:#6246ea;
+      --violet2:#4530b5;
+      --coral: #f05c3c;
+      --green: #1a9e5c;
+      --amber: #d98c00;
+      --r-sm: 8px;
+      --r-md: 14px;
+      --r-lg: 22px;
+      --r-xl: 32px;
+      --font: "DM Sans", system-ui, sans-serif;
+      --mono: "DM Mono", monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--off);
+      color: var(--ink);
+      font-family: var(--font);
+      min-height: 100vh;
+    }
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+    }
+    .app {
+      position: relative;
+      z-index: 1;
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 2rem 1.75rem 3rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--mono);
+      font-size: 0.95rem;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      color: var(--ink);
+    }
+    .logo-mark {
+      width: 32px; height: 32px;
+      background: var(--ink);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .logo-mark svg { width: 14px; height: 14px; fill: var(--white); }
+    .chips { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    .chip {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      padding: 0.3rem 0.75rem;
+      border-radius: 100px;
+      background: var(--white);
+      border: 1px solid var(--line2);
+      color: var(--ink3);
+      display: flex; align-items: center; gap: 0.4rem;
+      transition: all 0.2s;
+    }
+    .chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink3); transition: background 0.2s; }
+    .chip.online { border-color: rgba(26,158,92,0.35); color: var(--green); background: rgba(26,158,92,0.06); }
+    .chip.online .dot { background: var(--green); }
+    .chip.warn { border-color: rgba(217,140,0,0.35); color: var(--amber); background: rgba(217,140,0,0.06); }
+    .chip.warn .dot { background: var(--amber); }
+    .chip.error { border-color: rgba(240,92,60,0.35); color: var(--coral); background: rgba(240,92,60,0.06); }
+    .chip.error .dot { background: var(--coral); }
+    .chip.active { border-color: rgba(98,70,234,0.35); color: var(--violet); background: rgba(98,70,234,0.06); }
+    .chip.active .dot { background: var(--violet); }
+    .main-grid {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 1.25rem;
+      align-items: start;
+    }
+    @media (max-width: 900px) { .main-grid { grid-template-columns: 1fr; } }
+    .voice-panel {
+      background: var(--white);
+      border: 1px solid var(--line2);
+      border-radius: var(--r-xl);
+      padding: 1.75rem;
+      display: flex; flex-direction: column; gap: 1.25rem;
+    }
+    .panel-label {
+      font-size: 0.65rem; font-weight: 600;
+      letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink3);
+    }
+    .visualizer-box {
+      background: var(--off); border: 1px solid var(--line);
+      border-radius: var(--r-md); overflow: hidden;
+    }
+    canvas#visualizer { width: 100%; height: 56px; display: block; }
+    .status-row { display: flex; align-items: center; justify-content: space-between; }
+    .status-text { font-family: var(--mono); font-size: 0.75rem; color: var(--ink3); }
+    .status-dot-row { display: flex; gap: 4px; }
+    .status-dot-row span { width: 6px; height: 6px; border-radius: 50%; background: var(--line2); }
+    .status-dot-row span.lit { background: var(--cyan); }
+    .recognized-box {
+      background: var(--off); border: 1px solid var(--line);
+      border-radius: var(--r-md); padding: 0.85rem 1rem;
+      font-family: var(--mono); font-size: 0.78rem; color: var(--ink2);
+      min-height: 3.2rem; word-break: break-word;
+      transition: border-color 0.25s, background 0.25s;
+    }
+    .recognized-box.active { border-color: var(--cyan); background: rgba(0,184,217,0.04); }
+    .response-bubble {
+      display: none; text-align: center;
+      font-family: var(--mono); font-size: 0.8rem; font-weight: 500;
+      color: var(--green); background: rgba(26,158,92,0.08);
+      border: 1px solid rgba(26,158,92,0.25);
+      border-radius: 100px; padding: 0.45rem 1.2rem;
+      animation: pop-in 0.2s cubic-bezier(0.34,1.56,0.64,1);
+    }
+    .response-bubble.visible { display: block; }
+    @keyframes pop-in {
+      from { opacity: 0; transform: scale(0.82) translateY(4px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .cmd-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+    .cmd-box { background: var(--off); border: 1px solid var(--line); border-radius: var(--r-md); padding: 0.75rem; }
+    .cmd-box-label { font-size: 0.6rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink3); margin-bottom: 0.4rem; }
+    .cmd-words { display: flex; flex-wrap: wrap; gap: 4px; }
+    .cmd-pill { font-family: var(--mono); font-size: 0.65rem; padding: 2px 8px; border-radius: 100px; background: var(--white); border: 1px solid var(--line2); color: var(--violet); }
+    .data-panel { display: flex; flex-direction: column; gap: 1.25rem; }
+    .card { background: var(--white); border: 1px solid var(--line2); border-radius: var(--r-xl); padding: 1.5rem; }
+    .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.25rem; }
+    .card-title { font-size: 0.65rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink3); margin-bottom: 0.2rem; }
+    .card-sub { font-size: 0.75rem; color: var(--ink3); }
+    .sensor-value-wrap { text-align: right; }
+    .sensor-value { font-family: var(--mono); font-size: 2.2rem; font-weight: 400; color: var(--ink); letter-spacing: -0.03em; line-height: 1; }
+    .sensor-unit { font-size: 0.65rem; color: var(--ink3); margin-top: 2px; }
+    .chart-wrap { background: var(--off); border-radius: var(--r-md); padding: 0.75rem; overflow: hidden; }
+    canvas#sensor-chart { width: 100%; height: 100px; display: block; }
+    .chart-axis { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 0.55rem; color: var(--ink3); padding: 0.35rem 0 0; }
+    .esp-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+    .esp-card {
+      background: var(--white); border: 1px solid var(--line2);
+      border-radius: var(--r-xl); padding: 1.25rem 1.5rem;
+      transition: border-color 0.3s; position: relative; overflow: hidden;
+    }
+    .esp-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0;
+      height: 3px; background: var(--off3);
+      border-radius: var(--r-xl) var(--r-xl) 0 0; transition: background 0.3s;
+    }
+    .esp-card.online::before { background: var(--green); }
+    .esp-card.online { border-color: rgba(26,158,92,0.2); }
+    .esp-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; }
+    .esp-name { font-family: var(--mono); font-size: 0.75rem; font-weight: 500; color: var(--ink); }
+    .esp-badge {
+      font-size: 0.6rem; font-weight: 600; letter-spacing: 0.08em;
+      padding: 2px 8px; border-radius: 100px;
+      background: var(--off2); color: var(--ink3); border: 1px solid var(--line);
+      transition: all 0.3s;
+    }
+    .esp-card.online .esp-badge { background: rgba(26,158,92,0.1); color: var(--green); border-color: rgba(26,158,92,0.2); }
+    .esp-status { font-size: 0.75rem; color: var(--ink3); }
+    .esp-cmd { font-family: var(--mono); font-size: 0.7rem; color: var(--cyan2); margin-top: 0.3rem; min-height: 1.1em; }
+    .esp-leds {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      margin-top: 0.9rem;
+      padding-top: 0.9rem;
+      border-top: 1px solid var(--line);
+    }
+    .led-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .led-label {
+      font-family: var(--mono);
+      font-size: 0.55rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--ink3);
+    }
+    .led-bulb {
+      position: relative;
+      width: 28px;
+      height: 34px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .led-dome {
+      width: 28px; height: 28px;
+      border-radius: 50% 50% 40% 40%;
+      background: var(--off3);
+      border: 1.5px solid var(--off3);
+      transition: background 0.35s, border-color 0.35s, box-shadow 0.35s;
+      position: relative;
+      overflow: hidden;
+    }
+    .led-dome::after {
+      content: '';
+      position: absolute;
+      top: 5px; left: 6px;
+      width: 8px; height: 6px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.45);
+      transition: opacity 0.35s;
+      opacity: 0;
+    }
+    .led-base {
+      width: 10px; height: 6px;
+      background: var(--off3);
+      border-radius: 0 0 3px 3px;
+      border: 1.5px solid var(--off3);
+      border-top: none;
+      transition: background 0.35s;
+    }
+    .led-bulb.on-blue .led-dome {
+      background: #29d6f5;
+      border-color: #00b8d9;
+      box-shadow: 0 0 12px 4px rgba(0,184,217,0.55), 0 0 28px 6px rgba(0,184,217,0.2);
+    }
+    .led-bulb.on-blue .led-dome::after { opacity: 1; }
+    .led-bulb.on-blue .led-base { background: #00b8d9; border-color: #007f98; }
+    .led-bulb.on-green .led-dome {
+      background: #2edf85;
+      border-color: #1a9e5c;
+      box-shadow: 0 0 12px 4px rgba(26,158,92,0.55), 0 0 28px 6px rgba(26,158,92,0.2);
+    }
+    .led-bulb.on-green .led-dome::after { opacity: 1; }
+    .led-bulb.on-green .led-base { background: #1a9e5c; border-color: #0f6b3d; }
+    .led-bulb.on-amber .led-dome {
+      background: #ffcc44;
+      border-color: #d98c00;
+      box-shadow: 0 0 12px 4px rgba(217,140,0,0.55), 0 0 28px 6px rgba(217,140,0,0.2);
+    }
+    .led-bulb.on-amber .led-dome::after { opacity: 1; }
+    .led-bulb.on-amber .led-base { background: #d98c00; border-color: #a86c00; }
+    .led-bulb.on-red .led-dome {
+      background: #ff5a5a;
+      border-color: #e03030;
+      box-shadow: 0 0 12px 4px rgba(224,48,48,0.55), 0 0 28px 6px rgba(224,48,48,0.2);
+    }
+    .led-bulb.on-red .led-dome::after { opacity: 1; }
+    .led-bulb.on-red .led-base { background: #e03030; border-color: #b02020; }
+    @keyframes led-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.75; }
+    }
+    .led-bulb.on-blue .led-dome,
+    .led-bulb.on-green .led-dome,
+    .led-bulb.on-amber .led-dome,
+    .led-bulb.on-red .led-dome {
+      animation: led-pulse 2s ease-in-out infinite;
+    }
+    @keyframes led-flash {
+      0%   { opacity: 1; transform: scale(1); }
+      15%  { opacity: 1; transform: scale(1.18); }
+      35%  { opacity: 0.7; transform: scale(0.96); }
+      55%  { opacity: 1; transform: scale(1.08); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+    .led-bulb.flash .led-dome {
+      animation: led-flash 0.5s ease forwards, led-pulse 2s ease-in-out 0.5s infinite;
+    }
+    .log-card {
+      background: var(--white); border: 1px solid var(--line2);
+      border-radius: var(--r-xl); padding: 1.5rem;
+      display: flex; flex-direction: column; gap: 0.75rem;
+    }
+    .log-header { display: flex; align-items: center; justify-content: space-between; }
+    #log-container { overflow-y: auto; max-height: 190px; display: flex; flex-direction: column; gap: 0; }
+    #log-container::-webkit-scrollbar { width: 3px; }
+    #log-container::-webkit-scrollbar-thumb { background: var(--off3); border-radius: 2px; }
+    .log-entry { display: flex; gap: 0.75rem; padding: 0.3rem 0; border-bottom: 1px solid var(--line); align-items: baseline; }
+    .log-entry:last-child { border-bottom: none; }
+    .log-time { font-family: var(--mono); font-size: 0.65rem; color: var(--ink3); flex-shrink: 0; }
+    .log-msg { font-family: var(--mono); font-size: 0.7rem; color: var(--ink2); }
+    .log-msg.ok  { color: var(--green); }
+    .log-msg.cmd { color: var(--violet); font-weight: 500; }
+    .log-msg.wake{ color: var(--amber); font-weight: 500; }
+    .log-msg.err { color: var(--coral); }
+    .log-tag { font-size: 0.55rem; padding: 1px 6px; border-radius: 100px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; flex-shrink: 0; }
+    .log-tag.ok   { background: rgba(26,158,92,0.1); color: var(--green); }
+    .log-tag.cmd  { background: rgba(98,70,234,0.1); color: var(--violet); }
+    .log-tag.wake { background: rgba(217,140,0,0.1); color: var(--amber); }
+    .log-tag.err  { background: rgba(240,92,60,0.1); color: var(--coral); }
+
+    #explosion-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+    }
+    #explosion-overlay.active { display: block; }
+    #explosion-canvas { width: 100%; height: 100%; display: block; }
+    @keyframes shake {
+      0%,100%{ transform: translate(0,0) rotate(0deg); }
+      10%    { transform: translate(-8px,6px) rotate(-1deg); }
+      20%    { transform: translate(10px,-4px) rotate(1deg); }
+      30%    { transform: translate(-6px,8px) rotate(-0.5deg); }
+      40%    { transform: translate(8px,-6px) rotate(0.8deg); }
+      50%    { transform: translate(-10px,4px) rotate(-1deg); }
+      60%    { transform: translate(6px,-8px) rotate(0.5deg); }
+      70%    { transform: translate(-8px,6px) rotate(-0.8deg); }
+      80%    { transform: translate(10px,-4px) rotate(1deg); }
+      90%    { transform: translate(-4px,8px) rotate(-0.5deg); }
+    }
+    body.shaking { animation: shake 0.7s ease; }
+    @keyframes flash-white {
+      0%   { opacity: 0; }
+      5%   { opacity: 1; }
+      25%  { opacity: 0.6; }
+      100% { opacity: 0; }
+    }
+    #flash-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: #fff;
+      z-index: 10000;
+      pointer-events: none;
+    }
+    #flash-overlay.active { display: block; animation: flash-white 1s ease forwards; }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <div class="top-bar">
+    <div class="logo">
+      <div class="logo-mark">
+        <svg viewBox="0 0 16 16"><path d="M8 1L2 4v4c0 3.31 2.5 6.4 6 7.16C12.5 14.4 15 11.31 15 8V4L8 1z"/></svg>
+      </div>
+      CONTROL VOZ
+    </div>
+    <div class="chips">
+      <div class="chip" id="chip-server"><span class="dot"></span><span>Servidor</span></div>
+      <div class="chip" id="chip-esp1"><span class="dot"></span><span>ESP1</span></div>
+      <div class="chip" id="chip-esp2"><span class="dot"></span><span>ESP2</span></div>
+      <div class="chip" id="chip-listen"><span class="dot"></span><span>Escucha</span></div>
+    </div>
+  </div>
+
+  <div class="main-grid">
+
+    <div class="voice-panel">
+      <div class="panel-label">Control de voz</div>
+      <div class="visualizer-box">
+        <canvas id="visualizer"></canvas>
+      </div>
+      <div class="status-row">
+        <span class="status-text" id="status-text">Escuchando…</span>
+        <div class="status-dot-row" id="dot-row">
+          <span class="lit"></span><span></span><span></span>
+        </div>
+      </div>
+      <div>
+        <div class="panel-label" style="margin-bottom:0.4rem">Texto reconocido</div>
+        <div class="recognized-box" id="recognized-text">—</div>
+      </div>
+      <div class="response-bubble" id="response-bubble"></div>
+      <div>
+        <div class="panel-label" style="margin-bottom:0.5rem">Comandos</div>
+        <div class="cmd-grid">
+          <div class="cmd-box">
+            <div class="cmd-box-label">ESP1 · Pin 15</div>
+            <div class="cmd-words">
+              <span class="cmd-pill">PRENDER</span>
+              <span class="cmd-pill">ENCENDER</span>
+              <span class="cmd-pill">APAGAR</span>
+            </div>
+          </div>
+          <div class="cmd-box">
+            <div class="cmd-box-label">ESP2 · Pin 2</div>
+            <div class="cmd-words">
+              <span class="cmd-pill">ACTIVAR</span>
+              <span class="cmd-pill">INTERRUMPIR</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="data-panel">
+
+      <div class="card">
+        <div class="card-top">
+          <div class="card-meta">
+            <div class="card-title">Sensor ESP1 · ADC</div>
+            <div class="card-sub">Lectura analógica en tiempo real</div>
+          </div>
+          <div class="sensor-value-wrap">
+            <div class="sensor-value" id="sensor-value">—</div>
+            <div class="sensor-unit">de 4095 máx.</div>
+          </div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="sensor-chart"></canvas>
+        </div>
+        <div class="chart-axis">
+          <span>← 60s</span><span>Tiempo</span><span>Ahora →</span>
+        </div>
+      </div>
+
+      <div class="esp-row">
+
+        <div class="esp-card" id="esp-card-1">
+          <div class="esp-header">
+            <span class="esp-name">ESP32 #1</span>
+            <span class="esp-badge" id="esp1-badge">Offline</span>
+          </div>
+          <div class="esp-status" id="esp1-status">Sin conexión</div>
+          <div class="esp-cmd" id="esp1-last-cmd"></div>
+          <div class="esp-leds">
+            <div class="led-group">
+              <div class="led-bulb" id="led-esp1-pin15">
+                <div class="led-dome"></div>
+                <div class="led-base"></div>
+              </div>
+              <span class="led-label">Pin 15</span>
+            </div>
+            <div class="led-group">
+              <div class="led-bulb" id="led-esp1-internal">
+                <div class="led-dome"></div>
+                <div class="led-base"></div>
+              </div>
+              <span class="led-label">Interno</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="esp-card" id="esp-card-2">
+          <div class="esp-header">
+            <span class="esp-name">ESP32 #2</span>
+            <span class="esp-badge" id="esp2-badge">Offline</span>
+          </div>
+          <div class="esp-status" id="esp2-status">Sin conexión</div>
+          <div class="esp-cmd" id="esp2-last-cmd"></div>
+          <div class="esp-leds">
+            <div class="led-group">
+              <div class="led-bulb" id="led-esp2-pin2">
+                <div class="led-dome"></div>
+                <div class="led-base"></div>
+              </div>
+              <span class="led-label">Pin 2</span>
+            </div>
+            <div class="led-group">
+              <div class="led-bulb" id="led-esp2-internal">
+                <div class="led-dome"></div>
+                <div class="led-base"></div>
+              </div>
+              <span class="led-label">Interno</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="log-card">
+        <div class="log-header">
+          <div class="panel-label">Registro de actividad</div>
+        </div>
+        <div id="log-container"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="explosion-overlay">
+  <canvas id="explosion-canvas"></canvas>
+</div>
+<div id="flash-overlay"></div>
+
+<script>
+const SAMPLE_RATE = 16000, MAX_DURATION = 5000, SILENCE_MS = 1500, SILENCE_THR = 8;
+const RESPONSES = {
+  wake: "Te escucho",
+  PRENDER: "Prendiendo", ENCENDER: "Encendiendo", APAGAR: "Apagando",
+  ACTIVAR: "Activando", INTERRUMPIR: "Interrumpiendo",
+  AUTODESTRUIR: "Autodestrucción iniciada",
+  unknown: "No reconocido"
+};
+
+const statusText     = document.getElementById("status-text");
+const recognized     = document.getElementById("recognized-text");
+const responseBubble = document.getElementById("response-bubble");
+const logContainer   = document.getElementById("log-container");
+const sensorValueEl  = document.getElementById("sensor-value");
+const sensorCanvas   = document.getElementById("sensor-chart");
+const sensorCtx      = sensorCanvas.getContext("2d");
+const visualizerCanvas = document.getElementById("visualizer");
+const visCtx         = visualizerCanvas.getContext("2d");
+const chipServer = document.getElementById("chip-server");
+const chipEsp1   = document.getElementById("chip-esp1");
+const chipEsp2   = document.getElementById("chip-esp2");
+const chipListen = document.getElementById("chip-listen");
+
+/* ─── LED STATE ─── */
+const ledState = { esp1Pin15: false, esp2Pin2: false };
+function ledEl(id) { return document.getElementById(id); }
+function setLed(el, colorClass, on) {
+  if (!el) return;
+  el.classList.remove("on-blue","on-green","on-amber","on-red","flash");
+  if (on) el.classList.add(colorClass);
+}
+function flashLed(el, colorClass) {
+  if (!el) return;
+  el.classList.remove("on-blue","on-green","on-amber","on-red","flash");
+  el.classList.add(colorClass);
+  void el.offsetWidth;
+  el.classList.add("flash");
+}
+function blinkInternal(espNum, colorClass, durationMs = 1200) {
+  const id = "led-esp" + espNum + "-internal";
+  const el = ledEl(id);
+  flashLed(el, colorClass);
+  setTimeout(() => setLed(el, colorClass, false), durationMs);
+}
+function applyLedCommand(comando, target) {
+  if (target === "esp1") {
+    const pin = ledEl("led-esp1-pin15");
+    if (comando === "PRENDER" || comando === "ENCENDER") {
+      ledState.esp1Pin15 = true;
+      flashLed(pin, "on-blue");
+    } else if (comando === "APAGAR") {
+      ledState.esp1Pin15 = false;
+      setLed(pin, "on-blue", false);
+    }
+    blinkInternal(1, "on-amber", 1200);
+  }
+  if (target === "esp2") {
+    const pin = ledEl("led-esp2-pin2");
+    if (comando === "ACTIVAR") {
+      ledState.esp2Pin2 = true;
+      flashLed(pin, "on-green");
+    } else if (comando === "INTERRUMPIR") {
+      ledState.esp2Pin2 = false;
+      setLed(pin, "on-green", false);
+    }
+    blinkInternal(2, "on-amber", 1200);
+  }
+}
+function blinkWake() {
+  blinkInternal(1, "on-amber", 800);
+  blinkInternal(2, "on-amber", 800);
+}
+function flashAllRed(times, intervalMs) {
+  let count = 0;
+  const ids = ["led-esp1-pin15","led-esp1-internal","led-esp2-pin2","led-esp2-internal"];
+  function tick() {
+    if (count >= times * 2) {
+      ids.forEach(id => setLed(ledEl(id), "on-red", false));
+      return;
+    }
+    const on = count % 2 === 0;
+    ids.forEach(id => setLed(ledEl(id), "on-red", on));
+    count++;
+    setTimeout(tick, intervalMs);
+  }
+  tick();
+}
+
+/* ─── SENSOR CHART ─── */
+const sensorData = [], MAX_PTS = 120;
+function resizeSensorCanvas() {
+  sensorCanvas.width  = sensorCanvas.offsetWidth  || 500;
+  sensorCanvas.height = sensorCanvas.offsetHeight || 100;
+}
+function drawSensorChart() {
+  const W = sensorCanvas.width, H = sensorCanvas.height;
+  sensorCtx.clearRect(0, 0, W, H);
+  if (sensorData.length < 2) return;
+  const pts = sensorData.slice(-MAX_PTS);
+  const step = W / (MAX_PTS - 1);
+  sensorCtx.beginPath();
+  pts.forEach((v,i) => { const x=i*step, y=H-(v/4095)*H*0.85; i===0?sensorCtx.moveTo(x,y):sensorCtx.lineTo(x,y); });
+  sensorCtx.lineTo((pts.length-1)*step,H); sensorCtx.lineTo(0,H); sensorCtx.closePath();
+  const grad = sensorCtx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,"rgba(0,184,217,0.18)"); grad.addColorStop(1,"rgba(0,184,217,0)");
+  sensorCtx.fillStyle = grad; sensorCtx.fill();
+  sensorCtx.beginPath();
+  pts.forEach((v,i) => { const x=i*step, y=H-(v/4095)*H*0.85; i===0?sensorCtx.moveTo(x,y):sensorCtx.lineTo(x,y); });
+  sensorCtx.strokeStyle="#00b8d9"; sensorCtx.lineWidth=1.5; sensorCtx.stroke();
+  const last=pts[pts.length-1], lx=(pts.length-1)*step, ly=H-(last/4095)*H*0.85;
+  sensorCtx.beginPath(); sensorCtx.arc(lx,ly,3,0,Math.PI*2);
+  sensorCtx.fillStyle="#00b8d9"; sensorCtx.fill();
+}
+window.addEventListener("resize",()=>{resizeSensorCanvas();drawSensorChart();});
+resizeSensorCanvas();
+setInterval(drawSensorChart,150);
+
+/* ─── SPEECH (VOZ TIPO CORTANA, CLARA Y FEMENINA) ─── */
+function speak(text, onEnd) {
+  if (!window.speechSynthesis) { onEnd?.(); return; }
+  speechSynthesis.cancel();
+
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang  = "es-MX";
+  u.rate  = 1.0;    // velocidad normal
+  u.pitch = 1.05;   // ligeramente agudo, femenino natural
+  u.volume = 1;
+
+  const voices = speechSynthesis.getVoices();
+  // Preferir voz femenina en español (México o España)
+  const preferred = voices.find(v =>
+    v.lang.startsWith("es") &&
+    /sabina|helena|maria|luisa|esperanza|monica|paulina/i.test(v.name)
+  ) || voices.find(v => v.lang.startsWith("es"));
+
+  if (preferred) u.voice = preferred;
+
+  u.onend = u.onerror = () => onEnd?.();
+  speechSynthesis.speak(u);
+}
+
+/* ─── SOCKET ─── */
+const socket = io();
+socket.on("connect", () => {
+  updateChip(chipServer,"online","Servidor OK");
+  log("Conectado al servidor","ok");
+  socket.emit("identificar",{tipo:"web"});
+});
+socket.on("disconnect", () => {
+  updateChip(chipServer,"error","Servidor off");
+  log("Desconectado","err");
+});
+socket.on("esp_status", ({esp1,esp2}) => {
+  updateEspCard("1",esp1);
+  updateEspCard("2",esp2);
+  updateChip(chipEsp1, esp1?"online":"warn", "ESP1 "+(esp1?"on":"off"));
+  updateChip(chipEsp2, esp2?"online":"warn", "ESP2 "+(esp2?"on":"off"));
+  if (!esp1) { setLed(ledEl("led-esp1-internal"),"on-amber",false); setLed(ledEl("led-esp1-pin15"),"on-blue",false); }
+  if (!esp2) { setLed(ledEl("led-esp2-internal"),"on-amber",false); setLed(ledEl("led-esp2-pin2"),"on-green",false); }
+});
+socket.on("sensor_data", ({valor}) => {
+  sensorData.push(valor);
+  if (sensorData.length > MAX_PTS*2) sensorData.splice(0, sensorData.length-MAX_PTS);
+  sensorValueEl.textContent = valor;
+});
+socket.on("procesando", ({estado}) => { if (estado) setMode("processing"); });
+
+socket.on("texto_reconocido", ({texto,comando,error,modo,esWake}) => {
+  if (error && !texto) {
+    recognized.textContent = error;
+    recognized.classList.remove("active");
+    log("Error: "+error,"err");
+    modo==="wake" ? restartListening() : returnToListening();
+    return;
+  }
+  recognized.textContent = texto || "—";
+  if (modo === "wake") {
+    if (esWake) {
+      recognized.classList.add("active");
+      log('Wake: "'+texto+'"',"wake");
+      setMode("awake");
+      blinkWake();
+      showBubble(RESPONSES.wake);
+      speak(RESPONSES.wake, () => startRecording("command"));
+    } else {
+      recognized.classList.remove("active");
+      restartListening();
+    }
+  } else {
+    if (comando) {
+      const resp = RESPONSES[comando] || RESPONSES.unknown;
+      recognized.classList.add("active");
+      log("Comando: "+comando,"cmd");
+      showBubble(resp);
+      if (comando === "AUTODESTRUIR") {
+        startSelfDestruct();
+      } else {
+        setMode("speaking");
+        speak(resp, () => returnToListening());
+      }
+    } else {
+      recognized.classList.remove("active");
+      log('Sin comando: "'+texto+'"',"err");
+      showBubble(RESPONSES.unknown);
+      speak(RESPONSES.unknown, () => returnToListening());
+    }
+  }
+});
+
+socket.on("comando_enviado", ({palabraVoz, payload, target}) => {
+  const espNum = target==="esp1" ? "1" : target==="esp2" ? "2" : null;
+  if (espNum) {
+    const el = document.getElementById("esp"+espNum+"-last-cmd");
+    if (el) { el.textContent = "↳ "+palabraVoz; setTimeout(()=>el.textContent="",5000); }
+  }
+  if (target === "esp1" || target === "esp2") {
+    applyLedCommand(palabraVoz, target);
+  }
+});
+
+/* ─── AUDIO ─── */
+let mediaRecorder, audioChunks, audioContext, analyserNode, streamRef;
+let grabando=false, silenceTimer, maxTimer, modoActual="wake";
+let animFrameId=null;
+
+async function startRecording(modo="wake") {
+  if (grabando) return;
+  modoActual=modo;
+  try {
+    streamRef = await navigator.mediaDevices.getUserMedia({audio:{sampleRate:SAMPLE_RATE,channelCount:1}});
+    updateChip(chipListen,"active","Escucha activa");
+    audioContext  = new (window.AudioContext||window.webkitAudioContext)({sampleRate:SAMPLE_RATE});
+    analyserNode  = audioContext.createAnalyser();
+    analyserNode.fftSize=512;
+    const source  = audioContext.createMediaStreamSource(streamRef);
+    source.connect(analyserNode);
+    const mime    = getSupportedMime();
+    mediaRecorder = new MediaRecorder(streamRef,{mimeType:mime});
+    audioChunks   = [];
+    mediaRecorder.ondataavailable = e=>{if(e.data.size>0)audioChunks.push(e.data);};
+    mediaRecorder.onstop = async()=>{
+      const blob=new Blob(audioChunks,{type:mime});
+      await sendAudio(blob,modoActual);
+      cleanStream();
+    };
+    mediaRecorder.start(100);
+    grabando=true;
+    setMode(modo==="wake"?"listening":"recording");
+    drawVisualizer();
+    maxTimer=setTimeout(stopRecording,MAX_DURATION);
+    monitorSilence();
+  } catch(e) {
+    log("Mic error: "+e.message,"err");
+    updateChip(chipListen,"error","Sin permiso");
+  }
+}
+function stopRecording() {
+  if (!grabando) return;
+  grabando=false;
+  clearTimeout(maxTimer); clearTimeout(silenceTimer);
+  if (animFrameId) cancelAnimationFrame(animFrameId);
+  if (mediaRecorder?.state!=="inactive") mediaRecorder.stop();
+  setMode("processing"); clearVisualizer();
+}
+function cleanStream() {
+  streamRef?.getTracks().forEach(t=>t.stop()); streamRef=null;
+  audioContext?.close(); audioContext=analyserNode=null;
+  updateChip(chipListen,"","Escucha —");
+}
+function restartListening() { setTimeout(()=>startRecording("wake"),200); }
+function returnToListening() { setMode("listening"); restartListening(); }
+
+async function sendAudio(blob, modo) {
+  try {
+    const wav = await blobToWav(blob);
+    socket.emit("audio_chunk",{wav,modo});
+    log("Audio "+(wav.byteLength/1024).toFixed(1)+"KB ("+modo+")","ok");
+  } catch(e) { log("Error envío: "+e.message,"err"); returnToListening(); }
+}
+async function blobToWav(blob) {
+  const ab  = await blob.arrayBuffer();
+  const ctx = new (window.AudioContext||window.webkitAudioContext)({sampleRate:SAMPLE_RATE});
+  const buf = await ctx.decodeAudioData(ab);
+  ctx.close();
+  return encodeWAV(buf.getChannelData(0),SAMPLE_RATE);
+}
+function encodeWAV(samples,sr) {
+  const len=samples.length*2, buf=new ArrayBuffer(44+len), v=new DataView(buf);
+  const w=(o,t)=>{for(let i=0;i<t.length;i++)v.setUint8(o+i,t.charCodeAt(i));};
+  w(0,"RIFF");v.setUint32(4,36+len,true);w(8,"WAVE");w(12,"fmt ");
+  v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);
+  v.setUint16(34,16,true);w(36,"data");v.setUint32(40,len,true);
+  let offset=44;
+  for(let i=0;i<samples.length;i++){const s=Math.max(-1,Math.min(1,samples[i]));v.setInt16(offset,s<0?s*0x8000:s*0x7fff,true);offset+=2;}
+  return buf;
+}
+function monitorSilence() {
+  if (!analyserNode) return;
+  const d=new Uint8Array(analyserNode.frequencyBinCount);
+  (function check(){
+    if (!grabando||!analyserNode) return;
+    analyserNode.getByteFrequencyData(d);
+    const avg=d.reduce((a,b)=>a+b,0)/d.length;
+    if (avg<SILENCE_THR){if(!silenceTimer)silenceTimer=setTimeout(stopRecording,SILENCE_MS);}
+    else{clearTimeout(silenceTimer);silenceTimer=null;}
+    setTimeout(check,80);
+  })();
+}
+function getSupportedMime() {
+  for (const t of ["audio/webm;codecs=opus","audio/webm","audio/ogg;codecs=opus","audio/mp4"])
+    if(MediaRecorder.isTypeSupported(t))return t;
+  return "";
+}
+
+/* ─── VISUALIZER ─── */
+function clearVisualizer() { visCtx.clearRect(0,0,visualizerCanvas.width,visualizerCanvas.height); }
+function drawVisualizer() {
+  const W=visualizerCanvas.offsetWidth, H=56;
+  visualizerCanvas.width=W; visualizerCanvas.height=H;
+  if (!analyserNode){clearVisualizer();return;}
+  const bufLen=analyserNode.frequencyBinCount, dataArr=new Uint8Array(bufLen);
+  function frame(){
+    animFrameId=requestAnimationFrame(frame);
+    analyserNode.getByteFrequencyData(dataArr);
+    visCtx.clearRect(0,0,W,H);
+    const barW=(W/bufLen)*2.5; let x=0;
+    for(let i=0;i<bufLen;i++){
+      const barH=(dataArr[i]/255)*H, alpha=0.25+(dataArr[i]/255)*0.75;
+      const color=modoActual==="command"?`rgba(98,70,234,${alpha})`:`rgba(0,184,217,${alpha})`;
+      visCtx.fillStyle=color;
+      visCtx.fillRect(x,H-barH,Math.max(barW-1,1),barH);
+      x+=barW;
+    }
+  }
+  frame();
+}
+
+/* ─── UI HELPERS ─── */
+function setMode(mode) {
+  const labels = {
+    init:"Inicializando…",
+    listening:"Escuchando… di Sergio, Jarvis, Emiliano, Farid",
+    recording:"Grabando comando…",
+    awake:"¡Te escucho!",
+    processing:"Procesando…",
+    speaking:"Respondiendo…",
+    destruct:"Autodestrucción en curso…"
+  };
+  statusText.textContent = labels[mode]||mode;
+  const dots = document.getElementById("dot-row").querySelectorAll("span");
+  dots.forEach((d,i)=>d.classList.toggle("lit",i===0||mode==="recording"||mode==="awake"));
+}
+function showBubble(text) {
+  responseBubble.textContent=text;
+  responseBubble.classList.add("visible");
+  clearTimeout(window.bubbleTimer);
+  window.bubbleTimer=setTimeout(()=>responseBubble.classList.remove("visible"),4000);
+}
+function updateChip(chip,cls,text) {
+  chip.className="chip"+(cls?" "+cls:"");
+  chip.querySelectorAll("span")[1].textContent=text;
+}
+function updateEspCard(n,connected) {
+  const card=document.getElementById("esp-card-"+n);
+  const status=document.getElementById("esp"+n+"-status");
+  const badge=document.getElementById("esp"+n+"-badge");
+  if(!card)return;
+  card.classList.toggle("online",connected);
+  if(status)status.textContent=connected?"Conectado ✓":"Sin conexión";
+  if(badge)badge.textContent=connected?"Online":"Offline";
+}
+function log(msg,type="") {
+  const now=new Date().toLocaleTimeString("es-MX",{hour12:false});
+  const entry=document.createElement("div");
+  entry.className="log-entry";
+  const tagMap={ok:"OK",cmd:"CMD",wake:"WAKE",err:"ERR"};
+  const tagEl=type?`<span class="log-tag ${type}">${tagMap[type]||type}</span>`:"";
+  entry.innerHTML=`<span class="log-time">${now}</span>${tagEl}<span class="log-msg ${type}">${msg}</span>`;
+  logContainer.appendChild(entry);
+  logContainer.scrollTop=logContainer.scrollHeight;
+  while(logContainer.children.length>80)logContainer.removeChild(logContainer.firstChild);
+}
+
+/* ─── EXPLOSION ENGINE ─── */
+const expOverlay  = document.getElementById("explosion-overlay");
+const expCanvas   = document.getElementById("explosion-canvas");
+const expCtx      = expCanvas.getContext("2d");
+const flashEl     = document.getElementById("flash-overlay");
+
+let expParticles  = [];
+let expAnimId     = null;
+
+function resizeExpCanvas() {
+  expCanvas.width  = window.innerWidth;
+  expCanvas.height = window.innerHeight;
+}
+window.addEventListener("resize", resizeExpCanvas);
+resizeExpCanvas();
+
+class Particle {
+  constructor(x, y, type) {
+    this.x = x; this.y = y;
+    this.type = type;
+    const angle = Math.random() * Math.PI * 2;
+    const speed = type === 'spark'  ? Math.random()*18+8
+                : type === 'ember'  ? Math.random()*10+3
+                : type === 'debris' ? Math.random()*14+5
+                :                     Math.random()*4+1;
+    this.vx = Math.cos(angle) * speed;
+    this.vy = Math.sin(angle) * speed - (type==='smoke'?3:2);
+    this.life = 1;
+    this.decay = type==='smoke'  ? Math.random()*0.008+0.004
+               : type==='spark'  ? Math.random()*0.03+0.02
+               : type==='debris' ? Math.random()*0.012+0.006
+               :                    Math.random()*0.018+0.01;
+    this.size  = type==='smoke'  ? Math.random()*60+30
+               : type==='spark'  ? Math.random()*3+1
+               : type==='debris' ? Math.random()*10+4
+               :                    Math.random()*12+4;
+    this.rotation = Math.random()*Math.PI*2;
+    this.rotSpeed = (Math.random()-0.5)*0.15;
+    const palettes = {
+      ember:  ['#ff9100','#ff5722','#ffcc02','#ff3d00','#fff176'],
+      spark:  ['#ffffff','#fffde7','#ffcc02','#ff9100'],
+      smoke:  ['#616161','#757575','#424242','#9e9e9e','#4a3000'],
+      debris: ['#5d4037','#795548','#ff9100','#e64a19','#3e2723'],
+    };
+    const pal = palettes[type] || palettes.ember;
+    this.color = pal[Math.floor(Math.random()*pal.length)];
+  }
+  update() {
+    this.x  += this.vx;
+    this.y  += this.vy;
+    this.vy += this.type==='smoke' ? -0.05 : 0.25;
+    this.vx *= 0.97;
+    this.life -= this.decay;
+    this.rotation += this.rotSpeed;
+    if (this.type==='smoke') this.size += 0.8;
+  }
+  draw(ctx) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, this.life) * (this.type==='smoke'?0.35:0.95);
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rotation);
+    if (this.type==='spark') {
+      ctx.strokeStyle = this.color;
+      ctx.lineWidth   = this.size;
+      ctx.lineCap     = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-this.vx*2, -this.vy*2);
+      ctx.lineTo(0, 0);
+      ctx.stroke();
+    } else if (this.type==='smoke') {
+      const g = ctx.createRadialGradient(0,0,0,0,0,this.size);
+      g.addColorStop(0, this.color+'88');
+      g.addColorStop(1, this.color+'00');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(0,0,this.size,0,Math.PI*2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = this.color;
+      ctx.beginPath();
+      ctx.arc(0,0,this.size/2,0,Math.PI*2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+class Shockwave {
+  constructor(x,y) { this.x=x; this.y=y; this.r=10; this.life=1; }
+  update() { this.r+=18; this.life-=0.035; }
+  draw(ctx) {
+    ctx.save();
+    ctx.globalAlpha=Math.max(0,this.life)*0.6;
+    ctx.strokeStyle='#ff9100';
+    ctx.lineWidth=4*(this.life);
+    ctx.beginPath();
+    ctx.arc(this.x,this.y,this.r,0,Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+class Fireball {
+  constructor(x,y) { this.x=x; this.y=y; this.r=20; this.life=1; this.maxR=180; }
+  update() { this.r=Math.min(this.maxR, this.r+14); this.life-=0.022; }
+  draw(ctx) {
+    if (this.life<=0) return;
+    const g=ctx.createRadialGradient(this.x,this.y,0,this.x,this.y,this.r);
+    g.addColorStop(0,  `rgba(255,255,230,${this.life})`);
+    g.addColorStop(0.2,`rgba(255,200,50,${this.life*0.9})`);
+    g.addColorStop(0.5,`rgba(255,80,0,${this.life*0.7})`);
+    g.addColorStop(1,  `rgba(60,0,0,0)`);
+    ctx.save();
+    ctx.globalAlpha=1;
+    ctx.fillStyle=g;
+    ctx.beginPath();
+    ctx.arc(this.x,this.y,this.r,0,Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+let expObjects = [];
+
+function spawnExplosion(x, y) {
+  expObjects.push(new Fireball(x,y));
+  for(let i=0;i<3;i++) expObjects.push(new Shockwave(x,y));
+  for(let i=0;i<180;i++) expObjects.push(new Particle(x,y,'ember'));
+  for(let i=0;i<120;i++) expObjects.push(new Particle(x,y,'spark'));
+  for(let i=0;i<80;i++)  expObjects.push(new Particle(x,y,'smoke'));
+  for(let i=0;i<60;i++)  expObjects.push(new Particle(x,y,'debris'));
+}
+
+function runExplosionLoop() {
+  expAnimId = requestAnimationFrame(runExplosionLoop);
+  expCtx.clearRect(0,0,expCanvas.width,expCanvas.height);
+  expObjects = expObjects.filter(o=>o.life>0);
+  expObjects.forEach(o=>{ o.update(); o.draw(expCtx); });
+  if(expObjects.length===0) {
+    cancelAnimationFrame(expAnimId);
+    expAnimId=null;
+    expOverlay.classList.remove("active");
+  }
+}
+
+function triggerExplosion() {
+  resizeExpCanvas();
+  expOverlay.classList.add("active");
+  expObjects=[];
+  const cx=expCanvas.width/2, cy=expCanvas.height/2;
+  spawnExplosion(cx, cy);
+  setTimeout(()=>spawnExplosion(cx+randomRange(-200,200), cy+randomRange(-120,120)), 200);
+  setTimeout(()=>spawnExplosion(cx+randomRange(-180,180), cy+randomRange(-100,100)), 420);
+  setTimeout(()=>spawnExplosion(cx+randomRange(-250,250), cy+randomRange(-150,150)), 650);
+  setTimeout(()=>spawnExplosion(cx+randomRange(-150,150), cy+randomRange(-80,80)),   850);
+  if(!expAnimId) runExplosionLoop();
+  flashEl.classList.remove("active");
+  void flashEl.offsetWidth;
+  flashEl.classList.add("active");
+  document.body.classList.remove("shaking");
+  void document.body.offsetWidth;
+  document.body.classList.add("shaking");
+  setTimeout(()=>document.body.classList.remove("shaking"),800);
+}
+
+function randomRange(a,b){ return Math.random()*(b-a)+a; }
+
+function playExplosionSound() {
+  try {
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const boom = ctx.createOscillator();
+    const boomGain = ctx.createGain();
+    boom.type='sine'; boom.frequency.setValueAtTime(120,ctx.currentTime);
+    boom.frequency.exponentialRampToValueAtTime(20, ctx.currentTime+0.8);
+    boomGain.gain.setValueAtTime(1,ctx.currentTime);
+    boomGain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+1.5);
+    boom.connect(boomGain); boomGain.connect(ctx.destination);
+    boom.start(); boom.stop(ctx.currentTime+1.5);
+    const bufSize = ctx.sampleRate*1.2;
+    const nBuf    = ctx.createBuffer(1,bufSize,ctx.sampleRate);
+    const data    = nBuf.getChannelData(0);
+    for(let i=0;i<bufSize;i++) data[i]=Math.random()*2-1;
+    const noise = ctx.createBufferSource();
+    noise.buffer = nBuf;
+    const nFilter = ctx.createBiquadFilter();
+    nFilter.type='lowpass'; nFilter.frequency.value=600;
+    const nGain = ctx.createGain();
+    nGain.gain.setValueAtTime(0.7,ctx.currentTime);
+    nGain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+1.2);
+    noise.connect(nFilter); nFilter.connect(nGain); nGain.connect(ctx.destination);
+    noise.start(); noise.stop(ctx.currentTime+1.2);
+    setTimeout(()=>ctx.close(),2000);
+  } catch(_){}
+}
+
+/* ─── AUTODESTRUCT ─── */
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+function playBeep(durationMs,freq){
+  return new Promise(resolve=>{
+    try{
+      const ctx=new(window.AudioContext||window.webkitAudioContext)();
+      const osc=ctx.createOscillator(),gain=ctx.createGain();
+      osc.type='square'; osc.frequency.value=freq; gain.gain.value=0.25;
+      osc.connect(gain); gain.connect(ctx.destination); osc.start();
+      setTimeout(()=>{osc.stop();ctx.close();resolve();},durationMs);
+    }catch(e){resolve();}
+  });
+}
+
+async function startSelfDestruct() {
+  if(grabando){
+    grabando=false;
+    clearTimeout(maxTimer);clearTimeout(silenceTimer);
+    if(animFrameId)cancelAnimationFrame(animFrameId);
+    if(mediaRecorder?.state!=="inactive")mediaRecorder.stop();
+    cleanStream();
+  }
+  setMode("destruct");
+  recognized.classList.add("active");
+  for(let i=10;i>=1;i--){
+    statusText.textContent=`Autodestrucción en ${i}...`;
+    recognized.textContent=`Cuenta regresiva: ${i}`;
+    ["led-esp1-pin15","led-esp1-internal","led-esp2-pin2","led-esp2-internal"]
+      .forEach(id=>flashLed(ledEl(id),"on-red"));
+    const freq = 600 + (10-i)*30;
+    await playBeep(100, freq);
+    await sleep(900);
+    ["led-esp1-pin15","led-esp1-internal","led-esp2-pin2","led-esp2-internal"]
+      .forEach(id=>setLed(ledEl(id),"on-red",false));
+  }
+  statusText.textContent="💥 ¡BOOM!";
+  recognized.textContent="Sistema destruido";
+  playExplosionSound();
+  triggerExplosion();
+  ["led-esp1-pin15","led-esp1-internal","led-esp2-pin2","led-esp2-internal"]
+    .forEach(id=>setLed(ledEl(id),"on-red",false));
+  flashAllRed(8,80);
+  await sleep(3500);
+  recognized.classList.remove("active");
+  recognized.textContent="—";
+  setMode("listening");
+  restartListening();
+}
+
+/* ─── INIT ─── */
+(function init(){
+  visualizerCanvas.width=visualizerCanvas.offsetWidth||320;
+  if(window.speechSynthesis){speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices();}
+  setMode("listening");
+  startRecording("wake");
+  log("Sistema iniciado — esperando palabra de activación","ok");
+})();
+</script>
+</body>
+</html>
